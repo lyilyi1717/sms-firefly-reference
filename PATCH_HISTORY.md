@@ -4,6 +4,27 @@ Chronological record of all deployed patches. Each entry: file, date, what chang
 
 ---
 
+## 2026-05-30
+
+### `patch_receiver_textplain.js` + MacroDroid header change
+**Problem:** Webhook `/webhook/sms-in` returned HTTP 422 "Failed to parse request body" for multi-line bank SMS. Root cause: Saudi bank SMS bodies contain raw `\r\n` control chars; MacroDroid's `\n → \\n` escape step was a no-op at that point in the template. n8n's strict `application/json` body parser rejected the malformed payload before the workflow even ran.
+
+**Two-part fix:**
+
+1. **MacroDroid** — "Send SMS to Webhook" macro, POST action: changed `Content-Type` header from `application/json; charset=utf-8` to `text/plain; charset=utf-8`. This bypasses n8n's JSON parser entirely. ⚠️ Done manually on the phone — `MacroDroid_fixed3.mdr` still has the old header; the live macro now differs from that file.
+
+2. **n8n — SMS Receiver (`W6vGjhatADpLi4jU`):**
+   - `Webhook` node: `options.rawBody = true`
+   - `Code: Parse & OTP Check`: rewrote to repair raw control chars (0x00–0x1F) in text/plain string bodies before `JSON.parse`. Still handles `application/json` (body already an object) for the Python backfill path.
+
+**Files:** deploy script `patch_receiver_textplain.js` · code source `patch_receiver_parse.js` · export `sms-firefly-wf-W6vGjhatADpLi4jU.json`
+
+**Verified:** multi-line `\r\n` payloads parsed correctly with newlines preserved; `application/json` (backfill) unaffected.
+
+**Gotcha:** `rawBody=true` alone does NOT bypass n8n's JSON parser for `application/json` — client must send `text/plain`. Best debug: inspect the Webhook node's raw body via `/api/v1/executions/<id>?includeData=true`.
+
+---
+
 ## 2026-05-29
 
 ### Dashboard: Review tab "✕ Not Txn" button fix (inline — no patch file)

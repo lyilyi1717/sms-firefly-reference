@@ -2,6 +2,18 @@
 
 ## Active Quirks (not bugs — by design)
 
+### MacroDroid_fixed3.mdr is stale — live macro differs
+`C:\Users\BigB\MacroDroid_fixed3.mdr` has `Content-Type: application/json; charset=utf-8` for the POST action in "Send SMS to Webhook".  
+The live macro on the phone was manually changed to `text/plain; charset=utf-8` (2026-05-30 fix for 422 errors).  
+**Do not** re-import `MacroDroid_fixed3.mdr` — it will revert the content-type fix.  
+If you need to export an updated `.mdr`, do it from the phone, not from this file.
+
+### SMS Receiver Code node: text/plain expected from MacroDroid
+`Code: Parse & OTP Check` in `W6vGjhatADpLi4jU` now handles two cases:
+- `text/plain` (phone) → `$json.body` is a raw string → control chars repaired → `JSON.parse`
+- `application/json` (Python backfill) → `$json.body` is already an object → used directly
+If the MacroDroid content-type reverts to `application/json` and the SMS body contains `\r\n`, n8n will 422 before the workflow runs — not a code bug, a client config issue.
+
 ### Qdrant search bypassed
 `nomic-embed-text` produces near-identical embeddings for all bank SMS — useless for similarity search.  
 **Do not** rebuild the Qdrant search path until a better embedding model is available.  
