@@ -6,6 +6,13 @@ Chronological record of all deployed patches. Each entry: file, date, what chang
 
 ## 2026-05-29
 
+### `patch_fix_firefly_error.js`
+Two-node fix for `firefly_error` items being permanently abandoned:  
+1. `Postgres: Get Queue Item` — added `OR (status='firefly_error' AND retry_count<3)` to WHERE clause.  
+2. `Postgres: Mark Processed` — changed from always `processed=true` to CASE: `processed=false` / `processed_at=NULL` when `firefly_status='error'`, so failed items stay pickable.  
+One-time SQL reset applied for 65 accumulated items from 2026-05-24 Firefly outage.  
+**Impact:** Firefly failures now auto-retry up to 3x then fall to `status='error'`. No more silent abandonment.
+
 ### `patch_fix_auto_pattern.js`
 Adds `Code: Prep Auto Pattern` node before `Postgres: Auto Pattern`.  
 Pre-extracts pattern values into `$json.v_hint/v_cat/v_type` so the Postgres node can use simple `{{ $json.v_* }}` expressions instead of `$('Node').item.json.field.replace(...)` which breaks inside PL/pgSQL DO blocks.  

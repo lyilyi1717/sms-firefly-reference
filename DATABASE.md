@@ -20,9 +20,10 @@ body            TEXT,                 -- raw SMS body (Arabic + English)
 received_at     TEXT,                 -- unix ms as TEXT (not TIMESTAMPTZ!)
 queued_at       TIMESTAMPTZ,
 processed       BOOL DEFAULT false,
-status          TEXT,                 -- pending | ai_needed | processing | done | non_txn | error
+status          TEXT,                 -- pending | ai_needed | processing | done | non_txn | error | firefly_error
 retry_count     INT DEFAULT 0,
-last_attempted_at TIMESTAMPTZ
+last_attempted_at TIMESTAMPTZ,
+processed_at    TIMESTAMPTZ
 ```
 
 **Cast received_at:** `to_timestamp(received_at::numeric / 1000)`  
@@ -30,6 +31,7 @@ last_attempted_at TIMESTAMPTZ
 - `ai_needed` = legacy alias for `pending`; treated identically by scheduler
 - `processing` items older than 10min with retry_count<3 are re-picked (stall recovery)
 - `error` = hit max retries (retry_count reached 3)
+- `firefly_error` = Firefly III POST failed; `processed=false` so scheduler auto-retries up to 3x
 
 ---
 
@@ -167,4 +169,23 @@ WHERE status='processing' AND last_attempted_at < NOW()-INTERVAL '15 minutes';
 -- Reset stalled items
 UPDATE sms_queue SET status='pending', retry_count=0
 WHERE status='processing' AND last_attempted_at < NOW()-INTERVAL '15 minutes';
+
+-- firefly_error items (auto-retried by scheduler now — only needed if pre-patch items exist)
+SELECT sms_id, sender, body FROM sms_queue WHERE status='firefly_error';
+UPDATE sms_queue SET processed=false, processed_at=NULL, retry_count=0, status='pending'
+WHERE status='firefly_error';
+```
+
+### Scheduler pickup conditions (current)
+
+```sql
+WHERE processed = false
+  AND (
+    status IN ('pending', 'ai_needed')
+    OR (status = 'processing' AND retry_count < 3
+        AND (last_attempted_at IS NULL OR last_attempted_at < NOW() - INTERVAL '10 minutes'))
+    OR (status = 'firefly_error' AND retry_count < 3)
+  )
+ORDER BY queued_at ASC
+LIMIT 1
 ```

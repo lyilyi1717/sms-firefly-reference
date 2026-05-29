@@ -48,6 +48,12 @@ Old transactions have string IDs in Qdrant — only 1 vector was stored successf
 **Root cause:** `Postgres: Auto Pattern` threw "invalid syntax" because n8n's expression renderer can't handle `$('Node Name')` references chained with `.replace(/'/g,"''")` inside a PL/pgSQL `DO $$ ... $$` block. With `continueOnFail:true`, it silently skipped — regex patterns were never being saved after any transaction.  
 **Fix:** New node `Code: Prep Auto Pattern` pre-extracts values into `$json.v_hint`, `$json.v_cat`, `$json.v_type`. The `Postgres: Auto Pattern` query uses simple `{{ $json.v_* }}` references. `Code: Prep Auto Pattern` is inserted between `Postgres: Log` and `Postgres: Auto Pattern`.
 
+### [FIXED] firefly_error items permanently abandoned
+**Patch:** `patch_fix_firefly_error.js`  
+**Root cause:** Two bugs combined: (1) `Postgres: Mark Processed` always set `processed=true` even when Firefly III POST failed, so items with `status='firefly_error'` could never be re-picked. (2) `Postgres: Get Queue Item` WHERE clause didn't include `firefly_error`, so they were permanently ignored regardless of `processed` flag. 55 items accumulated from a Firefly outage on 2026-05-24 with no way to recover.  
+**Fix:** `Postgres: Mark Processed` now sets `processed=false` / `processed_at=NULL` on failure. `Postgres: Get Queue Item` adds `OR (status='firefly_error' AND retry_count<3)`. Existing 65 stuck items reset via one-time SQL.  
+**Future behaviour:** Firefly failures auto-retry up to 3x via normal max-retries mechanism, then become `status='error'`.
+
 ### [FIXED] Foreign currency transactions (49 items)
 **Script:** `fix_foreign_txns.js`  
 49 transactions in GBP/EUR/USD were miscategorized or had wrong amounts due to currency detection gap. One-time bulk fix applied.
@@ -63,5 +69,10 @@ When items stall in `processing`:
 4. Common causes:
    - Merchant Lookup 0-row (pre-sentinel) → FIXED
    - Ollama timeout/crash → check `http://192.168.8.10:11434`
-   - Firefly III down → check `http://192.168.8.10:8181`
+   - Firefly III down → check `http://192.168.8.10:8181` (now sets `firefly_error`, auto-retries)
    - Postgres connection issue → check n8n credential `qx7cEqJpZFgDgCax`
+
+When `firefly_error` items appear:
+- Scheduler automatically retries them up to 3x (post `patch_fix_firefly_error.js`)
+- If count keeps growing, Firefly III is likely down — check `http://192.168.8.10:8181`
+- After Firefly recovers, items drain automatically on next scheduler cycles
