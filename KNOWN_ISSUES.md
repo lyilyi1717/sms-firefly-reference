@@ -54,6 +54,17 @@ Old transactions have string IDs in Qdrant — only 1 vector was stored successf
 **Fix:** `Postgres: Mark Processed` now sets `processed=false` / `processed_at=NULL` on failure. `Postgres: Get Queue Item` adds `OR (status='firefly_error' AND retry_count<3)`. Existing 65 stuck items reset via one-time SQL.  
 **Future behaviour:** Firefly failures auto-retry up to 3x via normal max-retries mechanism, then become `status='error'`.
 
+### [FIXED] Dashboard review tab buttons did nothing
+**File:** `sms-dashboard/app.js`  
+**Root cause:** `\n` inside a JS template literal in `app.js` rendered as a literal newline inside a single-quoted string in the inline `<script>` block — JavaScript SyntaxError on page load. The entire `<script>` block failed to parse, so `doNotTxn`, `doCorrect`, and `doDismiss` were all undefined. Clicking any button produced no response (no confirm dialog, no error).  
+**Fix:** Changed `\n` → `\\n` in the `prompt()` call (line 345). The rendered output now contains the JS escape sequence `\n` rather than a raw newline.  
+**Lesson:** Never use `\n` inside a JS string literal that lives inside a server-side template literal — it becomes a literal newline in the output. Use `\\n`.
+
+### [FIXED] STC Bank transfer "Source and destination are the same account"
+**File:** `sms-firefly-wf-IUliVtDElkxMnl9t.json` — `Code: Resolve Account`  
+**Root cause:** When the Firefly accounts cache was empty, the body-scan fallback found "stc bank" in the SMS body and set `merchant = 'SNB'` — same as the source account name. Firefly rejected the transfer with "source and destination are the same account".  
+**Fix:** Added guard `&& canonical.toLowerCase() !== sourceName.toLowerCase()` in the body-scan branch so a body-scan match is ignored when it would equal the source account.
+
 ### [FIXED] Foreign currency transactions (49 items)
 **Script:** `fix_foreign_txns.js`  
 49 transactions in GBP/EUR/USD were miscategorized or had wrong amounts due to currency detection gap. One-time bulk fix applied.

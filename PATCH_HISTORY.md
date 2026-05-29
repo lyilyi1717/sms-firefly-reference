@@ -6,6 +6,21 @@ Chronological record of all deployed patches. Each entry: file, date, what chang
 
 ## 2026-05-29
 
+### Dashboard: Review tab "✕ Not Txn" button fix (inline — no patch file)
+**Root cause:** `\n` inside a JS template literal in `app.js` rendered as a literal newline inside a single-quoted JS string in the `<script>` block — JavaScript SyntaxError. The entire inline `<script>` block failed to parse, so `doNotTxn`, `doCorrect`, and `doDismiss` were all undefined. Clicking any review button did nothing.  
+**Fix:** Changed `\n` → `\\n` in the `prompt()` call so the rendered script contains the escape sequence `\n`, not a raw line break.  
+**Impact:** All three review buttons (Correct, Looks Good, ✕ Not Txn) now work.
+
+### `patch_tg_not_txn.js`
+Added "✕ Not a Transaction" button to Telegram correction keyboard and wired handling in `smscorrection01`:  
+1. `Code: Build Confirm Msg` — added `{ text: '✕ Not a Transaction', callback_data: 'F:<fid>:not_txn' }` row to inline keyboard.  
+2. `Code: Filter & Parse` — handles `not_txn` callback_data.  
+3. New nodes: `IF: Is Not Txn` → `HTTP: Delete Firefly` + `Postgres: Mark Not Txn`.  
+**Impact:** User can now mark a transaction as non-transactional directly from Telegram without opening the dashboard.
+
+### Dashboard: "✕" Not Txn button on transactions list (inline — no patch file)
+Added a `✕` button to every row in the `/transactions` list view. Previously the Not Txn action was only available in the review queue. Any transaction (regardless of `needs_review` flag) can now be marked non-transactional from the dashboard.
+
 ### `patch_fix_firefly_error.js`
 Two-node fix for `firefly_error` items being permanently abandoned:  
 1. `Postgres: Get Queue Item` — added `OR (status='firefly_error' AND retry_count<3)` to WHERE clause.  
